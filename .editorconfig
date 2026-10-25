@@ -1,0 +1,11 @@
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+dotnet_analyzer_diagnostic.category-Performance.severity = warning
+dotnet_analyzer_diagnostic.category-Security.severity = warning
+
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.CA1822.severity = suggestion

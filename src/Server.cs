@@ -23,7 +23,8 @@ while (true)
     var requestParts = requestLine.Split(' ');
     var target = requestParts[1];
     var body = string.Empty;
-    if (target == "/index.html")
+    Console.WriteLine($"Processing request for target: {target}");
+    if (target == "/")
     {
         body = "HTTP/1.1 200 OK\r\n\r\n";
     }

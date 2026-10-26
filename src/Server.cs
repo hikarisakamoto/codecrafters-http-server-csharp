@@ -2,8 +2,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-// You can use print statements as follows for debugging, they'll be visible when running tests.
-Console.WriteLine("Logs from your program will appear here!");
+const string eol = "\r\n"; 
+const string eoh = "\r\n\r\n";
+const string httpOkResponse = "HTTP/1.1 200 OK";
 
 TcpListener server = new(IPAddress.Any, 4221);
 server.Start();
@@ -21,17 +22,21 @@ while (true)
     var requestLines = request.Split("\r\n");
     var requestLine = requestLines[0];
     var requestParts = requestLine.Split(' ');
+
     var target = requestParts[1];
-    var body = string.Empty;
+    var response = string.Empty;
     Console.WriteLine($"Processing request for target: {target}");
-    if (target == "/")
+    // Actually, reading dotnet core source code to learn this and how pro do it
+    switch (target)
     {
-        body = "HTTP/1.1 200 OK\r\n\r\n";
+        case "/":
+            response = $"{httpOkResponse}{eoh}"; 
+            break;
+        default:
+            response = "HTTP/1.1 404 Not Found\r\n\r\n";
+            break;
     }
-    else
-    {
-        body = "HTTP/1.1 404 Not Found\r\n\r\n";
-    }
-    Console.WriteLine($"Responding with body: {body}");
-    await stream.WriteAsync(Encoding.UTF8.GetBytes(body));
+    
+    Console.WriteLine($"Responding with: {response}");
+    await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
 }

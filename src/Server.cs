@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-const string eol = "\r\n"; 
+const string eol = "\r\n";
 const string eoh = "\r\n\r\n";
 const string httpOkResponse = "HTTP/1.1 200 OK";
 
@@ -13,30 +13,44 @@ while (true)
 {
     using var client = await server.AcceptTcpClientAsync(); // wait for client
     await using var stream = client.GetStream();
-    Console.WriteLine("Client connected, reading request...");
-    // Read the request before replying; closing with unread data would reset the connection.
     var buffer = new byte[1_024];
     var bytesRead = await stream.ReadAsync(buffer);
-    Console.WriteLine($"Request read ({bytesRead} bytes), sending response...");
     var request = Encoding.UTF8.GetString(buffer, 0, bytesRead);
     var requestLines = request.Split("\r\n");
     var requestLine = requestLines[0];
     var requestParts = requestLine.Split(' ');
+    var response = string.Empty;
+    if (requestParts.Length < 3)
+    {
+        response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+        await WriteResponseAsync(stream, response);
+        continue;
+    }
 
     var target = requestParts[1];
-    var response = string.Empty;
     Console.WriteLine($"Processing request for target: {target}");
-    // Actually, reading dotnet core source code to learn this and how pro do it
-    switch (target)
+    if (target == "/")
     {
-        case "/":
-            response = $"{httpOkResponse}{eoh}"; 
-            break;
-        default:
-            response = "HTTP/1.1 404 Not Found\r\n\r\n";
-            break;
+        response = $"{httpOkResponse}{eoh}";
+        await WriteResponseAsync(stream, response);
+        continue;
     }
-    
-    Console.WriteLine($"Responding with: {response}");
-    await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
+
+    if (target.StartsWith("/echo/"))
+    {
+        var echoMessage = target["/echo/".Length..];
+        Console.WriteLine($"Echoing message: {echoMessage}");
+        response = $"{httpOkResponse}{eol}Content-Type: text/plain{eol}Content-Length: {echoMessage.Length}{eoh}{echoMessage}";
+        await WriteResponseAsync(stream, response);
+        continue;
+    }
+
+    await WriteResponseAsync(stream, response);
+}
+
+static async Task WriteResponseAsync(NetworkStream stream, string response)
+{
+    var responseBytes = Encoding.UTF8.GetBytes(response);
+    Console.WriteLine($"Sending response: {response}");
+    await stream.WriteAsync(responseBytes);
 }

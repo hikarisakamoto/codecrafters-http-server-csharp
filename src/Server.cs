@@ -2,79 +2,92 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-const string eol = "\r\n";
-const string eoh = "\r\n\r\n";
-const string httpOkResponse = "HTTP/1.1 200 OK";
-
-TcpListener server = new(IPAddress.Any, 4221);
+using var server = new TcpListener(IPAddress.Any, 4221);
 server.Start();
-Console.WriteLine("Server started, waiting for client...");
+Console.WriteLine("Server listening on port 4221...");
+
 while (true)
 {
-    using var client = await server.AcceptTcpClientAsync(); // wait for client
-    await using var stream = client.GetStream();
-    var buffer = new byte[1_024];
-    var bytesRead = await stream.ReadAsync(buffer);
-    var request = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-    var requestLines = request.Split("\r\n");
-    var requestLine = requestLines[0];
-    var requestParts = requestLine.Split(' ');
-    var response = string.Empty;
-    if (requestParts.Length < 3)
+    var client = await server.AcceptTcpClientAsync();
+
+    _ = HandleClientAsync(client);
+}
+
+static async Task HandleClientAsync(TcpClient client)
+{
+    using (client)
     {
-        response = "HTTP/1.1 400 Bad Request\r\n\r\n";
-        await WriteResponseAsync(stream, response);
-        continue;
+        try
+        {
+            await using var stream = client.GetStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+            var requestLines = new List<string>();
+
+            while (true)
+            {
+                var line = await reader.ReadLineAsync();
+                if (line is null)
+                {
+                    return;
+                }
+
+                if (line.Length == 0)
+                {
+                    break;
+                }
+
+                requestLines.Add(line);
+            }
+
+            var response = GetResponse(requestLines);
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
+        }
+        catch (Exception exception) when (exception is IOException or SocketException)
+        {
+            Console.Error.WriteLine($"Client connection failed: {exception.Message}");
+        }
+    }
+}
+
+static string GetResponse(List<string> requestLines)
+{
+    if (requestLines.Count == 0)
+    {
+        return CreateResponse("400 Bad Request");
+    }
+
+    var requestParts = requestLines[0].Split(' ');
+    if (requestParts.Length != 3)
+    {
+        return CreateResponse("400 Bad Request");
     }
 
     var target = requestParts[1];
-    Console.WriteLine($"Processing request for target: {target}");
     if (target == "/")
     {
-        response = $"{httpOkResponse}{eoh}";
-        await WriteResponseAsync(stream, response);
-        continue;
+        return CreateResponse("200 OK");
     }
 
-    if (target.StartsWith("/echo/"))
+    if (target.StartsWith("/echo/", StringComparison.Ordinal))
     {
-        var echoMessage = target["/echo/".Length..];
-        Console.WriteLine($"Echoing message: {echoMessage}");
-        response = $"{httpOkResponse}{eol}Content-Type: text/plain{eol}Content-Length: {echoMessage.Length}{eoh}{echoMessage}";
-        await WriteResponseAsync(stream, response);
-        continue;
+        return CreateResponse("200 OK", target["/echo/".Length..]);
     }
 
-    if (target.StartsWith("/user-agent"))
+    if (target == "/user-agent")
     {
-        for (var i = 0; i < requestLines.Length; i++)
-        {
-            Console.WriteLine(requestLines[i]);
-            if (requestLines[i].StartsWith("user-agent", StringComparison.OrdinalIgnoreCase))
-            {
-                var userAgent = requestLines[i]["user-agent:".Length..].Trim();
-                response = $"{httpOkResponse}{eol}Content-Type: text/plain{eol}Content-Length: {userAgent.Length}{eoh}{userAgent}";
-
-            }
-        }
-        await WriteResponseAsync(stream, response);
-        continue;
+        const string headerName = "User-Agent:";
+        var header = requestLines.Skip(1).FirstOrDefault(line =>
+            line.StartsWith(headerName, StringComparison.OrdinalIgnoreCase));
+        var userAgent = header?[headerName.Length..].Trim() ?? string.Empty;
+        return CreateResponse("200 OK", userAgent);
     }
 
-    response = "HTTP/1.1 404 Not Found\r\n\r\n";
-    await WriteResponseAsync(stream, response);
+    return CreateResponse("404 Not Found");
 }
 
-static async Task WriteResponseAsync(NetworkStream stream, string response)
-{
-    var responseBytes = Encoding.UTF8.GetBytes(response);
-    Console.WriteLine($"Sending response: {response}");
-    await stream.WriteAsync(responseBytes);
-}
-// for i in {1..10}; do
-//  (
-//    response=$(curl -sS "http://localhost:4221/echo/$i")
-//    printf 'Request %s → %s\n' "$i" "$response"
-//  ) &
-// done
-// wait
+static string CreateResponse(string status, string body = "") =>
+    $"HTTP/1.1 {status}\r\n" +
+    "Content-Type: text/plain\r\n" +
+    $"Content-Length: {Encoding.UTF8.GetByteCount(body)}\r\n" +
+    "Connection: close\r\n\r\n" +
+    body;

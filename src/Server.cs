@@ -45,6 +45,22 @@ while (true)
         continue;
     }
 
+    if (target.StartsWith("/user-agent"))
+    {
+        for (var i = 0; i < requestLines.Length; i++)
+        {
+            Console.WriteLine(requestLines[i]);
+            if (requestLines[i].StartsWith("user-agent", StringComparison.OrdinalIgnoreCase))
+            {
+                var userAgent = requestLines[i]["user-agent:".Length..].Trim();
+                response = $"{httpOkResponse}{eol}Content-Type: text/plain{eol}Content-Length: {userAgent.Length}{eoh}{userAgent}";
+
+            }
+        }
+        await WriteResponseAsync(stream, response);
+        continue;
+    }
+
     response = "HTTP/1.1 404 Not Found\r\n\r\n";
     await WriteResponseAsync(stream, response);
 }

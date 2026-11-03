@@ -71,3 +71,10 @@ static async Task WriteResponseAsync(NetworkStream stream, string response)
     Console.WriteLine($"Sending response: {response}");
     await stream.WriteAsync(responseBytes);
 }
+// for i in {1..10}; do
+//  (
+//    response=$(curl -sS "http://localhost:4221/echo/$i")
+//    printf 'Request %s → %s\n' "$i" "$response"
+//  ) &
+// done
+// wait

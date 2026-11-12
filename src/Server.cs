@@ -108,7 +108,7 @@ string GetResponse(List<string> requestLines)
         var header = requestLines.Skip(1).FirstOrDefault(line =>
             line.StartsWith(headerName, StringComparison.OrdinalIgnoreCase));
         var userAgent = header?[headerName.Length..].Trim() ?? string.Empty;
-        return CreateResponse("200 OK", userAgent);
+        return CreateResponse("200 OK", "text/plain", userAgent);
     }
 
     return CreateResponse("404 Not Found", "text/plain");

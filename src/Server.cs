@@ -25,7 +25,7 @@ while (true)
     _ = HandleClientAsync(client, directory);
 }
 
-async Task HandleClientAsync(TcpClient client, string directory)
+static async Task HandleClientAsync(TcpClient client, string directory)
 {
     using (client)
     {
@@ -33,25 +33,13 @@ async Task HandleClientAsync(TcpClient client, string directory)
         {
             await using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-            var requestLines = new List<string>();
-
-            while (true)
+            var requestLines = await ReadRequestAsync(reader);
+            if (requestLines is null)
             {
-                var line = await reader.ReadLineAsync();
-                if (line is null)
-                {
-                    return;
-                }
-
-                if (line.Length == 0)
-                {
-                    break;
-                }
-
-                requestLines.Add(line);
+                return;
             }
 
-            var response = GetResponse(requestLines);
+            var response = GetResponse(requestLines, directory);
             await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
         }
         catch (Exception exception) when (exception is IOException or SocketException)
@@ -61,7 +49,28 @@ async Task HandleClientAsync(TcpClient client, string directory)
     }
 }
 
-string GetResponse(List<string> requestLines)
+static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
+{
+    var requestLines = new List<string>();
+
+    while (true)
+    {
+        var line = await reader.ReadLineAsync();
+        if (line is null)
+        {
+            return null;
+        }
+
+        if (line.Length == 0)
+        {
+            return requestLines;
+        }
+
+        requestLines.Add(line);
+    }
+}
+
+static string GetResponse(List<string> requestLines, string directory)
 {
     if (requestLines.Count == 0)
     {
@@ -82,19 +91,7 @@ string GetResponse(List<string> requestLines)
 
     if (target.StartsWith("/files/", StringComparison.Ordinal))
     {
-        var fileName = target["/files/".Length..];
-        var path = Path.Combine(directory, fileName);
-        Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
-        if (!File.Exists(path))
-        {
-            Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
-            return CreateResponse("404 Not Found", "text/plain");
-        }
-
-        Console.WriteLine($"Reading file: '{path}'");
-        var body = File.ReadAllText(path);
-        Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");
-        return CreateResponse("200 OK", "application/octet-stream", body);
+        return GetFileResponse(target, directory);
     }
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
@@ -112,6 +109,23 @@ string GetResponse(List<string> requestLines)
     }
 
     return CreateResponse("404 Not Found", "text/plain");
+}
+
+static string GetFileResponse(string target, string directory)
+{
+    var fileName = target["/files/".Length..];
+    var path = Path.Combine(directory, fileName);
+    Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
+        return CreateResponse("404 Not Found", "text/plain");
+    }
+
+    Console.WriteLine($"Reading file: '{path}'");
+    var body = File.ReadAllText(path);
+    Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");
+    return CreateResponse("200 OK", "application/octet-stream", body);
 }
 
 static string CreateResponse(string status, string contentType, string body = "") =>

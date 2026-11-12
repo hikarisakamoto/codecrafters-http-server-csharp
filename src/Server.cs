@@ -72,12 +72,17 @@ static string GetResponse(List<string> requestLines)
     {
         var fileName = target["/files/".Length..];
         var path = Path.Combine("/tmp", fileName);
+        Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
         if (!File.Exists(path))
         {
+            Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
             return CreateResponse("404 Not Found", "text/plain");
         }
         
-        return CreateResponse("200 OK", "application/octet-stream", File.ReadAllText(path));
+        Console.WriteLine($"Reading file: '{path}'");
+        var body = File.ReadAllText(path);
+        Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");
+        return CreateResponse("200 OK", "application/octet-stream", body);
     }
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))

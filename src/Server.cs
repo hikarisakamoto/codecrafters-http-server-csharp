@@ -2,6 +2,18 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
+var directory = "/tmp";
+var directoryFlagIndex = Array.IndexOf(args, "--directory");
+if (directoryFlagIndex >= 0)
+{
+    if (directoryFlagIndex + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("Error: --directory flag requires a path argument.");
+        return;
+    }
+    directory = args[directoryFlagIndex + 1];
+}
+
 using var server = new TcpListener(IPAddress.Any, 4221);
 server.Start();
 Console.WriteLine("Server listening on port 4221...");
@@ -10,10 +22,10 @@ while (true)
 {
     var client = await server.AcceptTcpClientAsync();
 
-    _ = HandleClientAsync(client);
+    _ = HandleClientAsync(client, directory);
 }
 
-static async Task HandleClientAsync(TcpClient client)
+async Task HandleClientAsync(TcpClient client, string directory)
 {
     using (client)
     {
@@ -49,7 +61,7 @@ static async Task HandleClientAsync(TcpClient client)
     }
 }
 
-static string GetResponse(List<string> requestLines)
+string GetResponse(List<string> requestLines)
 {
     if (requestLines.Count == 0)
     {
@@ -67,18 +79,18 @@ static string GetResponse(List<string> requestLines)
     {
         return CreateResponse("200 OK", "text/plain");
     }
-    
+
     if (target.StartsWith("/files/", StringComparison.Ordinal))
     {
         var fileName = target["/files/".Length..];
-        var path = Path.Combine("/tmp", fileName);
+        var path = Path.Combine(directory, fileName);
         Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
         if (!File.Exists(path))
         {
             Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
             return CreateResponse("404 Not Found", "text/plain");
         }
-        
+
         Console.WriteLine($"Reading file: '{path}'");
         var body = File.ReadAllText(path);
         Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");

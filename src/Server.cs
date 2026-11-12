@@ -74,19 +74,19 @@ static string GetResponse(List<string> requestLines, string directory)
 {
     if (requestLines.Count == 0)
     {
-        return CreateResponse("400 Bad Request", "text/plain");
+        return CreateResponse("400 Bad Request");
     }
 
     var requestParts = requestLines[0].Split(' ');
     if (requestParts.Length != 3)
     {
-        return CreateResponse("400 Bad Request", "text/plain");
+        return CreateResponse("400 Bad Request");
     }
 
     var target = requestParts[1];
     if (target == "/")
     {
-        return CreateResponse("200 OK", "text/plain");
+        return CreateResponse("200 OK");
     }
 
     if (target.StartsWith("/files/", StringComparison.Ordinal))
@@ -96,19 +96,23 @@ static string GetResponse(List<string> requestLines, string directory)
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
     {
-        return CreateResponse("200 OK", "text/plain", target["/echo/".Length..]);
+        return CreateResponse("200 OK", body: target["/echo/".Length..]);
     }
 
     if (target == "/user-agent")
     {
-        const string headerName = "User-Agent:";
-        var header = requestLines.Skip(1).FirstOrDefault(line =>
-            line.StartsWith(headerName, StringComparison.OrdinalIgnoreCase));
-        var userAgent = header?[headerName.Length..].Trim() ?? string.Empty;
-        return CreateResponse("200 OK", "text/plain", userAgent);
+        return CreateResponse("200 OK", body: GetHeaderValue(requestLines, "User-Agent"));
     }
 
-    return CreateResponse("404 Not Found", "text/plain");
+    return CreateResponse("404 Not Found");
+}
+
+static string GetHeaderValue(List<string> requestLines, string headerName)
+{
+    var prefix = headerName + ":";
+    var header = requestLines.Skip(1).FirstOrDefault(line =>
+        line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    return header?[prefix.Length..].Trim() ?? string.Empty;
 }
 
 static string GetFileResponse(string target, string directory)
@@ -119,7 +123,7 @@ static string GetFileResponse(string target, string directory)
     if (!File.Exists(path))
     {
         Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
-        return CreateResponse("404 Not Found", "text/plain");
+        return CreateResponse("404 Not Found");
     }
 
     Console.WriteLine($"Reading file: '{path}'");
@@ -128,7 +132,7 @@ static string GetFileResponse(string target, string directory)
     return CreateResponse("200 OK", "application/octet-stream", body);
 }
 
-static string CreateResponse(string status, string contentType, string body = "") =>
+static string CreateResponse(string status, string contentType = "text/plain", string body = "") =>
     $"HTTP/1.1 {status}\r\n" +
     $"Content-Type: {contentType}\r\n" +
     $"Content-Length: {Encoding.UTF8.GetByteCount(body)}\r\n" +

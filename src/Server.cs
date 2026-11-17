@@ -23,7 +23,6 @@ while (true)
 {
     var client = await server.AcceptTcpClientAsync();
 
-    // Handle this client without making new connections wait.
     _ = HandleClientAsync(client, directory);
 }
 
@@ -61,13 +60,11 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
         var line = await reader.ReadLineAsync();
         if (line is null)
         {
-            // The client disconnected before sending all the headers.
             return null;
         }
 
         if (line.Length == 0)
         {
-            // A blank line marks the end of the request headers.
             return requestLines;
         }
 
@@ -89,7 +86,7 @@ static string RouteRequest(List<string> requestLines, string directory)
     }
 
     var target = requestLineParts[1];
-
+    var method = requestLineParts[0];
     if (target == "/")
     {
         return CreateResponse("200 OK");
@@ -97,7 +94,26 @@ static string RouteRequest(List<string> requestLines, string directory)
 
     if (target.StartsWith("/files/", StringComparison.Ordinal))
     {
-        return GetFileResponse(target, directory);
+        var fileName = target["/files/".Length..];
+        var path = Path.Combine(directory, fileName);
+        var body = "SOME DATA";
+
+        Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
+        Console.WriteLine($"Reading file: '{path}'");
+        if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
+                return CreateResponse("404 Not Found");
+            }
+
+            return GetFileResponse(path);
+        }
+        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"Writing  '{body}' to file: '{fileName}'");
+        }
     }
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
@@ -113,19 +129,8 @@ static string RouteRequest(List<string> requestLines, string directory)
     return CreateResponse("404 Not Found");
 }
 
-static string GetFileResponse(string target, string directory)
+static string GetFileResponse(string path)
 {
-    var fileName = target["/files/".Length..];
-    var path = Path.Combine(directory, fileName);
-    Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
-
-    if (!File.Exists(path))
-    {
-        Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
-        return CreateResponse("404 Not Found");
-    }
-
-    Console.WriteLine($"Reading file: '{path}'");
     var body = File.ReadAllText(path);
     Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");
 

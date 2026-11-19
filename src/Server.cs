@@ -54,8 +54,9 @@ static async Task HandleClientAsync(TcpClient client, string directory)
 static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
 {
     var requestLines = new List<string>();
-    var length = 0;
+    var contentLength = 0;
 
+    // Read the request line and headers.
     while (true)
     {
         var line = await reader.ReadLineAsync();
@@ -69,32 +70,33 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
             var contentLengthValue = line["Content-Length:".Length..].Trim();
             if (int.TryParse(contentLengthValue, out var parsedLength))
             {
-                length = parsedLength;
+                contentLength = parsedLength;
             }
         }
 
-
-
         if (line.Length == 0)
         {
-            if (length > 0)
-            {
-                var bodyBuffer = new char[length];
-                var readLength = await reader.ReadBlockAsync(bodyBuffer, 0, length);
-                if (readLength != length)
-                {
-                    Console.Error.WriteLine($"Expected to read {length} bytes for request body, but only read {readLength} bytes.");
-                    return null;
-                }
-
-                requestLines.Add(new string(bodyBuffer));
-            }
-
-            return requestLines;
+            break;
         }
 
         requestLines.Add(line);
     }
+
+    // Read the body, if present.
+    if (contentLength > 0)
+    {
+        var bodyBuffer = new char[contentLength];
+        var readLength = await reader.ReadBlockAsync(bodyBuffer, 0, contentLength);
+        if (readLength != contentLength)
+        {
+            Console.Error.WriteLine($"Expected to read {contentLength} bytes for request body, but only read {readLength} bytes.");
+            return null;
+        }
+
+        requestLines.Add(new string(bodyBuffer));
+    }
+
+    return requestLines;
 }
 
 static string RouteRequest(List<string> requestLines, string directory)
@@ -110,8 +112,9 @@ static string RouteRequest(List<string> requestLines, string directory)
         return CreateResponse("400 Bad Request");
     }
 
-    var target = requestLineParts[1];
     var method = requestLineParts[0];
+    var target = requestLineParts[1];
+
     if (target == "/")
     {
         return CreateResponse("200 OK");
@@ -123,24 +126,7 @@ static string RouteRequest(List<string> requestLines, string directory)
         var path = Path.Combine(directory, fileName);
 
         Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
-        Console.WriteLine($"Reading file: '{path}'");
-        if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!File.Exists(path))
-            {
-                Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
-                return CreateResponse("404 Not Found");
-            }
-
-            return GetFileResponse(path);
-        }
-        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
-        {
-            var body = requestLines.Last();
-            File.WriteAllText(path, body);
-
-            return CreateResponse("201 Created");
-        }
+        return HandleFileRequest(method, path, requestLines[^1]);
     }
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
@@ -156,12 +142,31 @@ static string RouteRequest(List<string> requestLines, string directory)
     return CreateResponse("404 Not Found");
 }
 
-static string GetFileResponse(string path)
+static string HandleFileRequest(string method, string path, string body)
 {
-    var body = File.ReadAllText(path);
-    Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(body)} response bytes. Returning 200 OK.");
+    Console.WriteLine($"Reading file: '{path}'");
 
-    return CreateResponse("200 OK", "application/octet-stream", body);
+    if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"File not found: '{path}'. Returning 404 Not Found.");
+            return CreateResponse("404 Not Found");
+        }
+
+        var fileContents = File.ReadAllText(path);
+        Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(fileContents)} response bytes. Returning 200 OK.");
+
+        return CreateResponse("200 OK", "application/octet-stream", fileContents);
+    }
+
+    if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+    {
+        File.WriteAllText(path, body);
+        return CreateResponse("201 Created");
+    }
+
+    return CreateResponse("404 Not Found");
 }
 
 static string GetHeaderValue(List<string> requestLines, string headerName)

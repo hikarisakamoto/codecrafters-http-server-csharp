@@ -54,6 +54,7 @@ static async Task HandleClientAsync(TcpClient client, string directory)
 static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
 {
     var requestLines = new List<string>();
+    var length = 0;
 
     while (true)
     {
@@ -63,8 +64,32 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
             return null;
         }
 
+        if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+        {
+            var contentLengthValue = line["Content-Length:".Length..].Trim();
+            if (int.TryParse(contentLengthValue, out var parsedLength))
+            {
+                length = parsedLength;
+            }
+        }
+
+
+
         if (line.Length == 0)
         {
+            if (length > 0)
+            {
+                var bodyBuffer = new char[length];
+                var readLength = await reader.ReadBlockAsync(bodyBuffer, 0, length);
+                if (readLength != length)
+                {
+                    Console.Error.WriteLine($"Expected to read {length} bytes for request body, but only read {readLength} bytes.");
+                    return null;
+                }
+
+                requestLines.Add(new string(bodyBuffer));
+            }
+
             return requestLines;
         }
 
@@ -96,7 +121,6 @@ static string RouteRequest(List<string> requestLines, string directory)
     {
         var fileName = target["/files/".Length..];
         var path = Path.Combine(directory, fileName);
-        var body = "SOME DATA";
 
         Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
         Console.WriteLine($"Reading file: '{path}'");
@@ -112,7 +136,10 @@ static string RouteRequest(List<string> requestLines, string directory)
         }
         if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine($"Writing  '{body}' to file: '{fileName}'");
+            var body = requestLines.Last();
+            File.WriteAllText(path, body);
+
+            return CreateResponse("201 Created");
         }
     }
 

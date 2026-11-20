@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -56,7 +57,6 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
     var requestLines = new List<string>();
     var contentLength = 0;
 
-    // Read the request line and headers.
     while (true)
     {
         var line = await reader.ReadLineAsync();
@@ -82,7 +82,6 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
         requestLines.Add(line);
     }
 
-    // Read the body, if present.
     if (contentLength > 0)
     {
         var bodyBuffer = new char[contentLength];
@@ -120,6 +119,7 @@ static string RouteRequest(List<string> requestLines, string directory)
         return CreateResponse("200 OK");
     }
 
+    var (encoding, isGzipEncoded) = GetContentEncoding(requestLines);
     if (target.StartsWith("/files/", StringComparison.Ordinal))
     {
         var fileName = target["/files/".Length..];
@@ -131,6 +131,7 @@ static string RouteRequest(List<string> requestLines, string directory)
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
     {
+        
         return CreateResponse("200 OK", body: target["/echo/".Length..]);
     }
 
@@ -145,7 +146,6 @@ static string RouteRequest(List<string> requestLines, string directory)
 static string HandleFileRequest(string method, string path, string body)
 {
     Console.WriteLine($"Reading file: '{path}'");
-
     if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
     {
         if (!File.Exists(path))
@@ -178,9 +178,36 @@ static string GetHeaderValue(List<string> requestLines, string headerName)
     return header?[prefix.Length..].Trim() ?? string.Empty;
 }
 
-static string CreateResponse(string status, string contentType = "text/plain", string body = "") =>
-    $"HTTP/1.1 {status}\r\n" +
-    $"Content-Type: {contentType}\r\n" +
-    $"Content-Length: {Encoding.UTF8.GetByteCount(body)}\r\n" +
-    "Connection: close\r\n\r\n" +
-    body;
+static (string encoding, bool isGzipEncoded) GetContentEncoding(List<string> requestLines)
+{
+    var encoding = GetHeaderValue(requestLines, "Content-Encoding");
+    var isGzipEncoded = encoding.Equals("gzip", StringComparison.OrdinalIgnoreCase);
+    return (encoding, isGzipEncoded);
+}
+
+static string CreateResponse(string status, string contentType = "text/plain", string body = "", string? encoding = null, bool isGzipEncoded = false)
+{
+    var response = new StringBuilder();
+    response.AppendLine($"HTTP/1.1 {status}\r\n");
+    response.AppendLine($"Content-Type: {contentType}\r\n");
+    response.AppendLine($"Content-Length: {Encoding.UTF8.GetByteCount(body)}\r\n");
+    response.AppendLine("Connection: close\r\n");
+    
+    if (!string.IsNullOrWhiteSpace(encoding) && isGzipEncoded)
+    {
+       var gzipStream = new GZipStream(new MemoryStream(), CompressionMode.Compress);
+       gzipStream.Write(Encoding.UTF8.GetBytes(body));
+       gzipStream.Close();
+       
+        response.AppendLine($"Content-Encoding: {encoding}\r\n\r\n");
+        response.AppendLine(Encoding.UTF8.GetString(((MemoryStream)gzipStream.BaseStream).ToArray()));
+         return response.ToString();
+    }
+    
+    return
+        $"HTTP/1.1 {status}\r\n" +
+        $"Content-Type: {contentType}\r\n" +
+        $"Content-Length: {Encoding.UTF8.GetByteCount(body)}\r\n" +
+        "Connection: close\r\n\r\n" +
+        body;
+}

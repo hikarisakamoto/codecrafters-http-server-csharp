@@ -131,8 +131,7 @@ static string RouteRequest(List<string> requestLines, string directory)
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
     {
-        
-        return CreateResponse("200 OK", body: target["/echo/".Length..]);
+        return CreateResponse("200 OK", body: target["/echo/".Length..], encoding: encoding, isGzipEncoded: isGzipEncoded);
     }
 
     if (target == "/user-agent")
@@ -180,7 +179,7 @@ static string GetHeaderValue(List<string> requestLines, string headerName)
 
 static (string encoding, bool isGzipEncoded) GetContentEncoding(List<string> requestLines)
 {
-    var encoding = GetHeaderValue(requestLines, "Content-Encoding");
+    var encoding = GetHeaderValue(requestLines, "Accept-Encoding");
     var isGzipEncoded = encoding.Equals("gzip", StringComparison.OrdinalIgnoreCase);
     return (encoding, isGzipEncoded);
 }

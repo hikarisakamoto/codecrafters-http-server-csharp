@@ -43,7 +43,8 @@ static async Task HandleClientAsync(TcpClient client, string directory)
                 return;
             }
 
-            var response = RouteRequest(requestLines, directory);
+            var closeConnection = CloseConnection(requestLines);
+            var response = RouteRequest(requestLines, directory, closeConnection);
             await stream.WriteAsync(response);
         }
         catch (Exception exception) when (exception is IOException or SocketException)
@@ -99,7 +100,7 @@ static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
     return requestLines;
 }
 
-static byte[] RouteRequest(List<string> requestLines, string directory)
+static byte[] RouteRequest(List<string> requestLines, string directory, bool closeConnection)
 {
     if (requestLines.Count == 0)
     {
@@ -117,7 +118,7 @@ static byte[] RouteRequest(List<string> requestLines, string directory)
 
     if (target == "/")
     {
-        return CreateResponse("200 OK");
+        return CreateResponse("200 OK", closeConnection: closeConnection);
     }
 
     if (target.StartsWith("/files/", StringComparison.Ordinal))
@@ -126,23 +127,23 @@ static byte[] RouteRequest(List<string> requestLines, string directory)
         var path = Path.Combine(directory, fileName);
 
         Console.WriteLine($"File request: target='{target}', fileName='{fileName}', path='{path}'");
-        return HandleFileRequest(method, path, requestLines[^1]);
+        return HandleFileRequest(method, path, requestLines[^1], closeConnection);
     }
 
     if (target.StartsWith("/echo/", StringComparison.Ordinal))
     {
-        return CreateResponse("200 OK", body: target["/echo/".Length..], useGzip: AcceptsGzip(requestLines));
+        return CreateResponse("200 OK", body: target["/echo/".Length..], useGzip: AcceptsGzip(requestLines), closeConnection: closeConnection);
     }
 
     if (target == "/user-agent")
     {
-        return CreateResponse("200 OK", body: GetHeaderValue(requestLines, "User-Agent"));
+        return CreateResponse("200 OK", body: GetHeaderValue(requestLines, "User-Agent"), closeConnection: closeConnection);
     }
 
     return CreateResponse("404 Not Found");
 }
 
-static byte[] HandleFileRequest(string method, string path, string body)
+static byte[] HandleFileRequest(string method, string path, string body, bool closeConnection)
 {
     Console.WriteLine($"Reading file: '{path}'");
     if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
@@ -156,13 +157,13 @@ static byte[] HandleFileRequest(string method, string path, string body)
         var fileContents = File.ReadAllText(path);
         Console.WriteLine($"File read: '{path}', {Encoding.UTF8.GetByteCount(fileContents)} response bytes. Returning 200 OK.");
 
-        return CreateResponse("200 OK", "application/octet-stream", fileContents);
+        return CreateResponse("200 OK", "application/octet-stream", fileContents, closeConnection: closeConnection);
     }
 
     if (method.Equals("POST", StringComparison.OrdinalIgnoreCase))
     {
         File.WriteAllText(path, body);
-        return CreateResponse("201 Created");
+        return CreateResponse("201 Created", closeConnection: closeConnection);
     }
 
     return CreateResponse("404 Not Found");
@@ -202,7 +203,7 @@ static byte[] Compress(byte[] body)
     return output.ToArray();
 }
 
-static byte[] CreateResponse(string status, string contentType = "text/plain", string body = "", bool useGzip = false)
+static byte[] CreateResponse(string status, string contentType = "text/plain", string body = "", bool useGzip = false, bool closeConnection = true)
 {
     var bodyBytes = Encoding.UTF8.GetBytes(body);
     if (useGzip)
@@ -215,8 +216,19 @@ static byte[] CreateResponse(string status, string contentType = "text/plain", s
         $"Content-Type: {contentType}\r\n" +
         $"Content-Length: {bodyBytes.Length}\r\n" +
         (useGzip ? "Content-Encoding: gzip\r\n" : "") +
-        // "Connection: close\r\n\r\n";
+        (closeConnection ? "Connection: close\r\n\r\n" : "") + 
         "\r\n";
 
     return [.. Encoding.ASCII.GetBytes(headers), .. bodyBytes];
+}
+
+static bool CloseConnection(List<string> requestLines)
+{
+    
+    var connectionHeader = GetHeaderValue(requestLines, "Connection");
+    if (string.IsNullOrWhiteSpace(connectionHeader))
+    {
+        return false;
+    }
+    return connectionHeader.Equals("close", StringComparison.OrdinalIgnoreCase);
 }

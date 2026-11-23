@@ -30,8 +30,6 @@ while (true)
 
 static async Task HandleClientAsync(TcpClient client, string directory)
 {
-    using (client)
-    {
         try
         {
             await using var stream = client.GetStream();
@@ -51,7 +49,6 @@ static async Task HandleClientAsync(TcpClient client, string directory)
         {
             Console.Error.WriteLine($"Client connection failed: {exception.Message}");
         }
-    }
 }
 
 static async Task<List<string>?> ReadRequestAsync(StreamReader reader)

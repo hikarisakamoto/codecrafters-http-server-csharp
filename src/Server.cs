@@ -30,25 +30,22 @@ while (true)
 
 static async Task HandleClientAsync(TcpClient client, string directory)
 {
-        try
+    try
+    {
+        await using var stream = client.GetStream();
+        using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+
+        while (await ReadRequestAsync(reader) is { } requestLines)
         {
-            await using var stream = client.GetStream();
-            using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-
-            var requestLines = await ReadRequestAsync(reader);
-            if (requestLines is null)
-            {
-                return;
-            }
-
             var closeConnection = CloseConnection(requestLines);
             var response = RouteRequest(requestLines, directory, closeConnection);
             await stream.WriteAsync(response);
         }
-        catch (Exception exception) when (exception is IOException or SocketException)
-        {
-            Console.Error.WriteLine($"Client connection failed: {exception.Message}");
-        }
+    }
+    catch (Exception exception) when (exception is IOException or SocketException)
+    {
+        Console.Error.WriteLine($"Client connection failed: {exception.Message}");
+    }
 }
 
 static async Task<List<string>?> ReadRequestAsync(StreamReader reader)
@@ -213,7 +210,7 @@ static byte[] CreateResponse(string status, string contentType = "text/plain", s
         $"Content-Type: {contentType}\r\n" +
         $"Content-Length: {bodyBytes.Length}\r\n" +
         (useGzip ? "Content-Encoding: gzip\r\n" : "") +
-        (closeConnection ? "Connection: close\r\n\r\n" : "") + 
+        (closeConnection ? "Connection: close\r\n\r\n" : "") +
         "\r\n";
 
     return [.. Encoding.ASCII.GetBytes(headers), .. bodyBytes];
@@ -221,7 +218,7 @@ static byte[] CreateResponse(string status, string contentType = "text/plain", s
 
 static bool CloseConnection(List<string> requestLines)
 {
-    
+
     var connectionHeader = GetHeaderValue(requestLines, "Connection");
     if (string.IsNullOrWhiteSpace(connectionHeader))
     {

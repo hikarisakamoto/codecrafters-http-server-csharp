@@ -214,8 +214,9 @@ static byte[] CreateResponse(string status, string contentType = "text/plain", s
         $"HTTP/1.1 {status}\r\n" +
         $"Content-Type: {contentType}\r\n" +
         $"Content-Length: {bodyBytes.Length}\r\n" +
-        (useGzip ? "Content-Encoding: gzip\r\n" : "") +
-        "Connection: close\r\n\r\n";
+        (useGzip ? "Content-Encoding: gzip\r\n" : "");
+        // +
+        //"Connection: close\r\n\r\n";
 
     return [.. Encoding.ASCII.GetBytes(headers), .. bodyBytes];
 }

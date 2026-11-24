@@ -40,6 +40,10 @@ static async Task HandleClientAsync(TcpClient client, string directory)
             var closeConnection = CloseConnection(requestLines);
             var response = RouteRequest(requestLines, directory, closeConnection);
             await stream.WriteAsync(response);
+            if(closeConnection)
+            {
+                stream.Close();
+            }
         }
     }
     catch (Exception exception) when (exception is IOException or SocketException)
